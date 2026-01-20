@@ -1,0 +1,86 @@
+index.js
+import { ethers } from "ethers";
+import dotenv from "dotenv";
+
+dotenv.config();
+
+const ETH_RPC = process.env.ETH_RPC;
+const ETH_IBT_ADDRESS = process.env.ETH_IBT_ADDRESS;
+
+const provider = new ethers.JsonRpcProvider(ETH_RPC);
+
+const ABI = [
+  "event Burn(address indexed from, uint256 amount, string suiAddress)"
+];
+
+const contract = new ethers.Contract(
+  ETH_IBT_ADDRESS,
+  ABI,
+  provider
+);
+
+console.log("[RELAYER] Listening for burn events...");
+
+contract.on("Burn", (from, amount, suiAddress) => {
+  console.log("[RELAYER] Burn detected");
+  console.log("ETH sender:", from);
+  console.log("Amount:", amount.toString());
+  console.log("Target Sui address:", suiAddress);
+});
+
+
+Move.toml
+[package]
+name = "ibt"
+version = "0.0.1"
+edition = "2024.beta"
+
+[addresses]
+ibt = "0x0"
+
+
+
+ibt.move
+module ibt::ibt {
+    use sui::coin;
+    use sui::object;
+    use sui::tx_context;
+    use sui::event;
+    use std::string;
+
+    struct BridgeState has key {
+        id: object::UID,
+        nonce: u64,
+    }
+
+    struct BridgeBurnEvent has copy, drop {
+        sender: address,
+        eth_address: string::String,
+        amount: u64,
+        nonce: u64,
+    }
+
+    public entry fun bridge_to_eth(
+        state: &mut BridgeState,
+        cap: &mut coin::TreasuryCap<IBT>,
+        coin_in: coin::Coin<IBT>,
+        eth_address: string::String,
+        ctx: &mut tx_context::TxContext
+    ) {
+        let amount = coin::value(&coin_in);
+        coin::burn(coin_in, cap);
+
+        event::emit(BridgeBurnEvent {
+            sender: tx_context::sender(ctx),
+            eth_address,
+            amount,
+            nonce: state.nonce,
+        });
+
+        state.nonce = state.nonce + 1;
+    }
+
+    struct IBT has store, drop {}
+}
+
+
